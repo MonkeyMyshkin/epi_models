@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Epidemic Model Simulators</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        line-height: 1.5;
+        color: #222;
+        background: #fff;
+        max-width: 42rem;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+      }
+      h1 { font-size: 1.8rem; margin-bottom: 0.5rem; }
+      ul { list-style: none; padding: 0; }
+      li { margin: 1.25rem 0; }
+      a { font-size: 1.2rem; font-weight: 600; color: #1f5fa8; }
+      p.note { color: #555; font-size: 0.95rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Simple Epidemic Model Simulators</h1>
+    <ul>
+      <li>
+        <a href="SIRmodel/">SIR model</a><br />
+        Susceptible → Infected → Recovered. Compare the deterministic solution
+        with stochastic replicates and their final size distribution.
+      </li>
+      <li>
+        <a href="SEIRmodel/">SEIR model</a><br />
+        Adds an Exposed (latent) stage to the SIR model.
+      </li>
+      <li>
+        <a href="SISmodel/">SIS model on contact networks</a><br />
+        Watch an infection spread and recover on real school and class contact
+        networks, or a random network, compared with a well-mixed model.
+      </li>
+    </ul>
+    <p class="note">
+      The simulators run entirely in your browser. The first one you open takes
+      a little while to load as it downloads R; after that they start faster.
+    </p>
+  </body>
+</html>
