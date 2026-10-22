@@ -58,10 +58,33 @@ mass_actionD <- function(beta,g,S0,I0,R0,time_vec)
 # Colours for S, I and R, shared by the checkbox labels and the plot
 sir_cols <- brewer.pal(3,'Set1')
 
+# In the shinylive (browser) version a plain click on a download link bypasses the
+# service worker that runs the app, so the browser gets "File wasn't available on
+# site". Fetch the file from the app instead (fetch() does go through the service
+# worker) and save it from a blob. Delegated, so it also covers the re-rendered button
+download_js <- tags$script(HTML("
+document.addEventListener('click', async function(e) {
+    const link = e.target.closest('a.shiny-download-link');
+    if(!link) return;
+    e.preventDefault();
+    const resp = await fetch(link.href);
+    if(!resp.ok) return;
+    const m = (resp.headers.get('Content-Disposition') || '').match(/filename=\"([^\"]+)\"/);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await resp.blob());
+    a.download = m ? m[1] : 'download.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function() { URL.revokeObjectURL(a.href); }, 1000);
+});
+"))
+
 ui <- fluidPage(
     
     # Application title
     titlePanel("SIR Model"),
+    download_js,
     
 # Sidebar: final size histogram and model inputs
 sidebarLayout(
