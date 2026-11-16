@@ -171,7 +171,9 @@ growth_window <- function(cum, N, c_min = 10, p_max = 0.05, use_peak = TRUE)
 # latent (mean TE) and infectious (mean TI) periods
 #   R0 = (1 + r*TE)*(1 + r*TI)
 # which is increasing in r, so the confidence limits for r map onto limits for R0
-r_to_R0 <- function(r, te, ti) (1 + r*te)*(1 + r*ti)
+# The formula only holds while both factors are positive: a growth rate below
+# -1/max(TE, TI) (e.g. the lower CI limit of a very uncertain fit) corresponds to R0 = 0
+r_to_R0 <- function(r, te, ti) ifelse(r <= -1/max(te, ti), 0, (1 + r*te)*(1 + r*ti))
 
 fit_growth <- function(y, win, te, ti)
 {
