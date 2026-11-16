@@ -12,7 +12,7 @@
 # The apps avoid deSolve (no working webR build) by solving the ODEs with a
 # base-R rk4() function, so every package they use is available in webR.
 
-apps    <- c("SIRmodel", "SEIRmodel", "SISmodel")
+apps    <- c("SIRmodel", "SEIRmodel", "SISmodel", "R0estimation")
 out_dir <- "_site"
 
 unlink(out_dir, recursive = TRUE)

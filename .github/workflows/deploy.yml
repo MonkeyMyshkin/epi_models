@@ -34,6 +34,7 @@ jobs:
             any::SimInf
             any::igraph
             any::RColorBrewer
+            any::EpiEstim
           dependencies: '"hard"'
 
       # Cache the downloaded Shinylive/webR assets between runs
