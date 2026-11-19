@@ -360,12 +360,39 @@ methods <- c('Growth rate: daily incidence' = 'incidence',
              'EpiEstim (growth window)'     = 'epiestim',
              'Renewal likelihood'           = 'renewal')
 method_cols <- c(stream_cols, final_size = 'grey30', epiestim = brewer.pal(8, 'Set1')[5],
-                 renewal = brewer.pal(8, 'Set1')[7])
+                 renewal = '#E7298A')
+
+# Line styles shared by the plots: models drawn for reference are solid grey, the
+# regression fit is black (its CI dotted), the renewal model dashed magenta and
+# EpiEstim orange (its growth-window estimate a darker orange)
+det_col   <- 'grey60'
+epiestim_dark <- '#A63603'
 
 # In the shinylive (browser) version a plain click on a download link bypasses the
 # service worker that runs the app, so the browser gets "File wasn't available on
 # site". Fetch the file from the app instead (fetch() does go through the service
 # worker) and save it from a blob. Delegated, so it also covers the re-rendered button
+# The Update button turns orange and pulses while there are changes it hasn't applied
+update_js <- tags$head(
+    tags$style(HTML("
+        #update { font-weight: bold; margin-top: 4px; }
+        #new_seed { margin-top: 6px; }
+        #update.pending { background-color: #e67e22; border-color: #d35400;
+                          animation: update-pulse 1.2s infinite; }
+        @keyframes update-pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(230, 126, 34, 0.7); }
+            70%  { box-shadow: 0 0 0 8px rgba(230, 126, 34, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(230, 126, 34, 0); } }
+        #update_hint { display: none; color: #d35400; font-size: 12px; margin-top: 3px; }
+        #update_hint.pending { display: block; }")),
+    tags$script(HTML("
+        Shiny.addCustomMessageHandler('update_pending', function(pending) {
+            ['update', 'update_hint'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) el.classList.toggle('pending', pending);
+            });
+        });")))
+
 download_js <- tags$script(HTML("
 document.addEventListener('click', async function(e) {
     const link = e.target.closest('a.shiny-download-link');
@@ -399,6 +426,7 @@ ui <- fluidPage(
     # Application title
     titlePanel(tagList('Estimating ', R0_tag), windowTitle = paste('Estimating', R0_sub)),
     download_js,
+    update_js,
 
     # Sidebar: model inputs, simulation options, what to plot and the growth window
     sidebarLayout(
@@ -460,10 +488,11 @@ ui <- fluidPage(
                                          value = default_seed,
                                          min = 1,
                                          max = 100000),
-                            actionButton('update',
-                                         'Update'),
+                            actionButton('update', 'Update', icon = icon('play'),
+                                         class = 'btn-primary', width = '100%'),
+                            tags$div(id = 'update_hint', 'Press Update to apply your changes'),
                             actionButton('new_seed',
-                                         'New epidemic')),width=6),
+                                         'New epidemic', width = '100%')),width=6),
             fluidRow(column(width=6,
                             checkboxInput('major_only',
                                           'Major outbreaks only',
@@ -481,7 +510,8 @@ ui <- fluidPage(
                                          choiceValues = names(series_names),
                                          selected = 'incidence'),
                             checkboxInput('log_y', 'Log scale', value = FALSE),
-                            checkboxInput('show_det', 'Show deterministic', value = TRUE))),
+                            checkboxInput('show_det', 'Show deterministic', value = TRUE),
+                            checkboxInput('show_cum', 'Plot cumulative infections (final size)', value = FALSE))),
             tags$hr(),
             tags$h4('Exponential growth window', style = 'font-size:16px'),
             fluidRow(column(width=6,
@@ -525,6 +555,9 @@ ui <- fluidPage(
                 tabPanel('Epidemic',
                          plotOutput("tsPlot",hover = "plot_hover"),
                          textOutput("info"),
+                         conditionalPanel('input.show_cum',
+                                          plotOutput("cumPlot", height = 320, hover = "cum_hover"),
+                                          textOutput("cum_info")),
                          tags$hr(),
                          tags$h4('Estimates of ', R0_tag),
                          tableOutput("estimates"),
@@ -547,7 +580,7 @@ ui <- fluidPage(
                          plotOutput("rtPlot"),
                          helpText('EpiEstim estimates of R over sliding 7-day windows, plotted at the end of',
                                   'each window, with 95% credible intervals. Windows with fewer than 12 cases',
-                                  'are left out. The dashed line is', R0_tag, '× S(t)/N, how many people each case',
+                                  'are left out. The grey line is', R0_tag, '× S(t)/N, how many people each case',
                                   'would infect given the susceptibles left.'),
                          plotOutput("siPlot", height = 250)),
                 # The same estimates for every replicate
@@ -602,6 +635,17 @@ observeEvent(input$new_seed, {
     seed <- as.integer((as.numeric(Sys.time())*1000) %% 100000) + 1L
     updateNumericInput(session, 'seed', value = seed)
     run_model(seed)
+})
+
+# Flag the Update button while the inputs differ from those of the epidemic shown
+observe({
+    p <- rv$pars
+    req(p)
+    now <- list(input$R0, input$te, input$ti, input$S0, input$E0, input$I0, input$Rinit, input$t_run,
+                max(1, round(input$reps)), input$seed, input$major_only, input$major_thresh)
+    old <- list(p$R0, p$te, p$ti, p$init[1], p$init[2], p$init[3], p$init[4], p$t_run,
+                p$reps, p$seed, p$major_only, p$major_thresh)
+    session$sendCustomMessage('update_pending', !isTRUE(all.equal(now, old, check.attributes = FALSE)))
 })
 
 output$beta_info <- renderUI({
@@ -726,7 +770,7 @@ output$tsPlot <- renderPlot({
     if(n_reps > 1)
         matlines(d$time, d$stoch[,-1,drop=FALSE], col=alpha_col(col,0.15), lty=1)
     if(input$show_det)
-        lines(d$time, d$det, col='grey40', lwd=2, lty=3)
+        lines(d$time, d$det, col=det_col, lwd=2.5)
     if(input$stream == 'incidence')
         points(d$time, y1, pch=19, col=col)
     else
@@ -740,8 +784,8 @@ output$tsPlot <- renderPlot({
         se <- sqrt(V[1,1] + 2*tt*V[1,2] + tt^2*V[2,2])
         q  <- qt(0.975, df.residual(g$fit))
         lines(tt, exp(b[1] + b[2]*tt), lwd = 2.5)
-        lines(tt, exp(b[1] + b[2]*tt - q*se), lty = 2)
-        lines(tt, exp(b[1] + b[2]*tt + q*se), lty = 2)
+        lines(tt, exp(b[1] + b[2]*tt - q*se), lty = 3, lwd = 1.5)
+        lines(tt, exp(b[1] + b[2]*tt + q*se), lty = 3, lwd = 1.5)
     }
     # Renewal model's expected onsets (each day given the cases before it), for incidence
     rn <- if(input$stream == 'incidence') renewal_fit() else NULL
@@ -749,21 +793,80 @@ output$tsPlot <- renderPlot({
     {
         mu <- rn$mu
         if(input$log_y) mu[mu <= 0] <- NA
-        lines(d$time[-1], mu[-1], col = method_cols[['renewal']], lwd = 2)
+        lines(d$time[-1], mu[-1], col = method_cols[['renewal']], lwd = 2.5, lty = 2)
     }
 
     leg_text <- c(if(n_reps > 1) 'Replicate 1' else 'Simulated', if(n_reps > 1) 'Other replicates',
                   if(input$show_det) 'Deterministic', if(!is.null(g)) c('Fit', '95% CI'), if(!is.null(rn)) 'Renewal model')
-    leg_col  <- c(col, if(n_reps > 1) alpha_col(col,0.4), if(input$show_det) 'grey40', if(!is.null(g)) c('black', 'black'),
+    leg_col  <- c(col, if(n_reps > 1) alpha_col(col,0.4), if(input$show_det) det_col, if(!is.null(g)) c('black', 'black'),
                   if(!is.null(rn)) method_cols[['renewal']])
-    leg_lty  <- c(if(input$stream == 'incidence') NA else 1, if(n_reps > 1) 1, if(input$show_det) 3, if(!is.null(g)) c(1, 2),
-                  if(!is.null(rn)) 1)
+    leg_lty  <- c(if(input$stream == 'incidence') NA else 1, if(n_reps > 1) 1, if(input$show_det) 1, if(!is.null(g)) c(1, 3),
+                  if(!is.null(rn)) 2)
     leg_pch  <- c(if(input$stream == 'incidence') 19 else NA, if(n_reps > 1) NA, if(input$show_det) NA, if(!is.null(g)) c(NA, NA),
                   if(!is.null(rn)) NA)
-    leg_lwd  <- c(3, if(n_reps > 1) 1, if(input$show_det) 2, if(!is.null(g)) c(2.5, 1), if(!is.null(rn)) 2)
+    leg_lwd  <- c(3, if(n_reps > 1) 1, if(input$show_det) 2.5, if(!is.null(g)) c(2.5, 1.5), if(!is.null(rn)) 2.5)
     # Trailing spaces keep each entry clear of the next one's line
     legend('top',inset=c(0,-0.12),xpd=TRUE,horiz=TRUE,bty='n',text.width=NA,legend=paste0(leg_text,'    '),
            col=leg_col,lty=leg_lty,pch=leg_pch,lwd=leg_lwd)
+})
+
+# Everyone ever infected (S, E and I at the start minus S now), which ends at the final
+# size. Other replicates are drawn faintly, with their final sizes as a sideways
+# histogram to the right of the time axis
+output$cumPlot <- renderPlot({
+    req(rv$sims, isTRUE(input$show_cum))
+    p    <- rv$pars
+    t    <- 0:p$t_run
+    n0   <- sum(p$init[1:3])
+    cum  <- n0 - as.matrix(rv$sims$S)
+    det  <- n0 - rv$det[,2]
+    fs   <- cum[nrow(cum),]
+    n_reps <- ncol(cum)
+    col  <- seir_cols[4]
+
+    # Room on the right for the histogram of final sizes
+    x_hist <- p$t_run*c(1.04, 1.22)
+    par(mar = c(4, 4, 2.5, 4.5))
+    plot(c(0, if(n_reps > 1) x_hist[2] else p$t_run), c(0, p$N), type = 'n', xaxt = 'n',
+         xlab = 'Time (days)', ylab = 'Ever infected')
+    axis(1, at = pretty(t)[pretty(t) <= p$t_run])
+    z_at <- seq(0, 1, 0.2)
+    axis(4, at = z_at*p$N, labels = z_at)
+    mtext('Proportion infected, z', side = 4, line = 2.5)
+    grid()
+    if(n_reps > 1)
+        matlines(t, cum[,-1,drop=FALSE], col = alpha_col(col, 0.15), lty = 1)
+    if(input$show_det)
+        lines(t, det, col = det_col, lwd = 2.5)
+    lines(t, cum[,1], col = col, lwd = 3)
+    # Final size of replicate 1, labelled so it can be read off
+    abline(h = fs[1], lty = 2, col = col)
+    text(0, fs[1], sprintf('Final size %d (z = %.3f)', round(fs[1]), fs[1]/p$N),
+         adj = c(0, if(fs[1] > 0.85*p$N) 1.4 else -0.5), col = col, font = 2)
+    if(n_reps > 1)
+    {
+        h <- hist(fs, breaks = seq(0, p$N, length.out = 27), plot = FALSE)
+        abline(v = mean(c(p$t_run, x_hist[1])), col = 'grey70')
+        w <- diff(x_hist)*h$counts/max(h$counts)
+        rect(x_hist[1], h$breaks[-length(h$breaks)], x_hist[1] + w, h$breaks[-1],
+             col = alpha_col(col, 0.6), border = 'white')
+        text(mean(x_hist), par('usr')[4], paste0('Final sizes (', n_reps, ' runs)'),
+             xpd = TRUE, pos = 3, cex = 0.85)
+    }
+    leg_text <- c(if(n_reps > 1) 'Replicate 1' else 'Simulated', if(n_reps > 1) 'Other replicates',
+                  if(input$show_det) 'Deterministic', 'Final size')
+    leg_col  <- c(col, if(n_reps > 1) alpha_col(col, 0.4), if(input$show_det) det_col, col)
+    leg_lty  <- c(1, if(n_reps > 1) 1, if(input$show_det) 1, 2)
+    leg_lwd  <- c(3, if(n_reps > 1) 1, if(input$show_det) 2.5, 1)
+    legend('top', inset = c(0, -0.14), xpd = TRUE, horiz = TRUE, bty = 'n', text.width = NA,
+           legend = paste0(leg_text, '    '), col = leg_col, lty = leg_lty, lwd = leg_lwd)
+})
+
+output$cum_info <- renderText({
+    e <- input$cum_hover
+    if(is.null(e) || is.null(rv$pars) || e$x > rv$pars$t_run) return("")
+    paste0("Time = ", round(e$x, 1), ", Ever infected = ", round(e$y), " (z = ",
+           formatC(e$y/rv$pars$N, digits = 3, format = 'f'), ")")
 })
 
 output$info <- renderText({
@@ -879,17 +982,17 @@ output$rtPlot <- renderPlot({
     grid()
     polygon(c(t, rev(t)), c(lo, rev(hi)), col = alpha_col(method_cols[['epiestim']], 0.3), border = NA)
     lines(t, e$`Mean(R)`, col = method_cols[['epiestim']], lwd = 3)
-    lines(0:p$t_run, p$R0*S/p$N, lty = 2, lwd = 2)
+    lines(0:p$t_run, p$R0*S/p$N, col = det_col, lwd = 2.5)
     abline(h = 1, col = 'grey50')
     if(!is.null(ew))
     {
-        segments(w[1], ew$`Mean(R)`, w[2], ew$`Mean(R)`, lwd = 3)
-        rect(w[1], ew$`Quantile.0.025(R)`, w[2], ew$`Quantile.0.975(R)`, border = 'black', lty = 2)
+        segments(w[1], ew$`Mean(R)`, w[2], ew$`Mean(R)`, lwd = 3, col = epiestim_dark)
+        rect(w[1], ew$`Quantile.0.025(R)`, w[2], ew$`Quantile.0.975(R)`, border = epiestim_dark, lty = 2, lwd = 1.5)
     }
     legend('top', inset = c(0, -0.12), xpd = TRUE, horiz = TRUE, bty = 'n', text.width = NA,
            legend = c(expression('R(t), 7-day windows    '), expression(R[0] %*% S(t)/N * '    '),
                       expression('Growth window estimate    ')),
-           col = c(method_cols[['epiestim']], 'black', 'black'), lty = c(1, 2, 1), lwd = c(3, 2, 3))
+           col = c(method_cols[['epiestim']], det_col, epiestim_dark), lty = c(1, 1, 1), lwd = c(3, 2.5, 3))
 })
 
 # The generation interval EpiEstim is given
